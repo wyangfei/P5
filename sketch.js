@@ -18,6 +18,80 @@ var leaves = [];
 
 var ground, treeTop;
 var firstClick = true;
+var uploadedImage = null;
+var imageColors = [];
+var imagePixels = [];
+var imageWidth = 0;
+var imageHeight = 0;
+var imageScale = 1;
+var imageOffsetX = 0;
+var imageOffsetY = 0;
+
+// 监听图片上传
+document.addEventListener('DOMContentLoaded', function() {
+    const imageUpload = document.getElementById('imageUpload');
+    const imagePreview = document.getElementById('imagePreview');
+    const imageUploadContainer = document.getElementById('imageUploadContainer');
+    const leafColorSelect = document.getElementById('leafColor');
+
+    leafColorSelect.addEventListener('change', function() {
+        imageUploadContainer.style.display = this.value === 'image' ? 'block' : 'none';
+    });
+
+    imageUpload.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    uploadedImage = img;
+                    imagePreview.style.backgroundImage = `url(${e.target.result})`;
+                    imagePreview.style.display = 'block';
+                    
+                    // 计算图片缩放比例和偏移量
+                    const maxWidth = windowWidth * 0.8;
+                    const maxHeight = windowHeight * 0.8;
+                    const scaleX = maxWidth / img.width;
+                    const scaleY = maxHeight / img.height;
+                    imageScale = Math.min(scaleX, scaleY);
+                    imageWidth = img.width * imageScale;
+                    imageHeight = img.height * imageScale;
+                    imageOffsetX = (windowWidth - imageWidth) / 2;
+                    imageOffsetY = (windowHeight - imageHeight) / 2;
+                    
+                    // 预采样图片像素
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCanvas.width = img.width;
+                    tempCanvas.height = img.height;
+                    tempCtx.drawImage(img, 0, 0);
+                    
+                    // 存储图片像素信息
+                    imagePixels = [];
+                    imageColors = [];
+                    const imageData = tempCtx.getImageData(0, 0, img.width, img.height);
+                    for(let y = 0; y < img.height; y++) {
+                        for(let x = 0; x < img.width; x++) {
+                            const i = (y * img.width + x) * 4;
+                            const r = imageData.data[i];
+                            const g = imageData.data[i + 1];
+                            const b = imageData.data[i + 2];
+                            const a = imageData.data[i + 3];
+                            // 只保存不透明的像素点
+                            if(a > 128) {
+                                imagePixels.push({x, y});
+                                imageColors.push([r, g, b]);
+                            }
+                        }
+                    }
+                }
+                img.src = e.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+    });
+});
 
 
 
@@ -101,20 +175,77 @@ function draw() {
 	backgroundLayer.drawingContext.shadowColor = color(0,0,0,100);
 	backgroundLayer.drawingContext.shadowBlur = 5;
 	leaves.forEach((leaf, index, arr) => {
-		var x = leaf.pos.x + random(-50, 50);
-		var y = leaf.pos.y + random(-50, 50);
-		backgroundLayer.fill(random(255), random(255), random(255));
-		var size = random(3, 10);
-		backgroundLayer.push();
-			backgroundLayer.translate(x, y);
-			backgroundLayer.rotate(random(TWO_PI));
-			backgroundLayer.rect(0, 0, size, size, 0, size / 2, 0, size / 2);
-		backgroundLayer.pop();
-		
-		leaf.life--;
-		if(leaf.life < 0){
-			arr.splice(index, 1);
-		}
+    let x = leaf.pos.x;
+    let y = leaf.pos.y;
+    let leafColorSelect = document.getElementById('leafColor');
+    let selectedColor = leafColorSelect.value;
+    
+    if (selectedColor === 'image' && imagePixels.length > 0) {
+        // 将叶子位置映射到图片坐标系
+        const imgX = (x - imageOffsetX) / imageScale;
+        const imgY = (y - imageOffsetY) / imageScale;
+        
+        // 找到最近的图片像素点
+        let minDist = Infinity;
+        let nearestPixel = null;
+        let nearestColor = null;
+        
+        for(let i = 0; i < imagePixels.length; i++) {
+            const pixel = imagePixels[i];
+            const dist = Math.sqrt(Math.pow(imgX - pixel.x, 2) + Math.pow(imgY - pixel.y, 2));
+            if(dist < minDist) {
+                minDist = dist;
+                nearestPixel = pixel;
+                nearestColor = imageColors[i];
+            }
+        }
+        
+        if(nearestPixel && minDist < 50) {
+            // 使用最近像素点的颜色
+            backgroundLayer.fill(nearestColor[0], nearestColor[1], nearestColor[2]);
+            // 减小随机偏移范围，使叶子更贴近图片轮廓
+            x = nearestPixel.x * imageScale + imageOffsetX + random(-2, 2);
+            y = nearestPixel.y * imageScale + imageOffsetY + random(-2, 2);
+            // 根据距离调整叶子大小，越近越小以呈现细节
+            size = map(minDist, 0, 50, 2, 5);
+        } else {
+            // 如果离图片太远，让叶子消失
+            arr.splice(index, 1);
+            return;
+        }
+    } else if (selectedColor === 'green') {
+        backgroundLayer.fill(random(50, 150), random(150, 255), random(50, 150));
+        x += random(-50, 50);
+        y += random(-50, 50);
+    } else if (selectedColor === 'yellow') {
+        backgroundLayer.fill(random(200, 255), random(200, 255), random(50, 150));
+        x += random(-50, 50);
+        y += random(-50, 50);
+    } else if (selectedColor === 'red') {
+        backgroundLayer.fill(random(200, 255), random(50, 100), random(50, 100));
+        x += random(-50, 50);
+        y += random(-50, 50);
+    } else if (selectedColor === 'brown') {
+        backgroundLayer.fill(random(139, 165), random(69, 95), random(19, 45));
+        x += random(-50, 50);
+        y += random(-50, 50);
+    } else {
+        backgroundLayer.fill(random(255), random(255), random(255));
+        x += random(-50, 50);
+        y += random(-50, 50);
+    }
+    
+    var size = random(3, 10);
+    backgroundLayer.push();
+        backgroundLayer.translate(x, y);
+        backgroundLayer.rotate(random(TWO_PI));
+        backgroundLayer.rect(0, 0, size, size, 0, size / 2, 0, size / 2);
+    backgroundLayer.pop();
+    
+    leaf.life--;
+    if(leaf.life < 0){
+        arr.splice(index, 1);
+    }
 	});
 	
 	// 将背景层和前景层绘制到主画布
@@ -155,10 +286,11 @@ function createTree(x, y, root){
 }
 
 function createLeaf(x, y){
-	return {
-		pos: createVector(x, y),
-		life: random(20, 60)
-	}
+    return {
+        pos: createVector(x, y),
+        // 增加叶子的持续时间，使其能更好地填充图片轮廓
+        life: random(40, 100)
+    }
 }
 
 function mod(m, n) {
